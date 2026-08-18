@@ -59,8 +59,11 @@ saturated snapshot. That *t+1* result **is** the registered sample of cycle
 `res_valid`). `res_valid` is exactly one cycle wide per `rd`.
 
 The key rule is: `rd` itself is the trigger for the readout; `res_valid` is
-only the one-cycle-delayed acknowledgment. Do not create a second delayed
-version of `rd` and then use that as the actual readout event.
+only the one-cycle-delayed acknowledgment. Implement that pulse as
+`res_valid <= rd` inside an `always @(posedge clk)` block (the same block
+as `acc`/`res`/`ovf` is fine). Do **not** add extra registers named
+`snapshot`, `rd_d`, `rd_d1`, or similar and then write
+`assign res_valid = rd_d1` — that is a second pipeline.
 
 ```
           t              t+1             t+2
@@ -153,9 +156,10 @@ to 0.
 ## 7. Implementation constraints
 
 - Synthesizable SystemVerilog, compatible with Icarus Verilog (`-g2012`).
-- Prefer `always @(posedge clk)` and `always @*` over `always_ff` /
-  `always_comb`. Icarus does not fully support part-selects inside
-  `always_*` processes.
+- Sequential logic must use `always @(posedge clk)`. Combinational logic
+  must use `always @*` or continuous `assign`. Do **not** use
+  `always_ff` or `always_comb`: Icarus does not fully support
+  part-selects inside `always_*` processes.
 - No SystemVerilog Assertions (SVA).
 - Do not change the module name, port names, directions, or widths.
 - Single clock domain. No latches.
