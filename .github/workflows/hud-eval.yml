@@ -1,0 +1,87 @@
+# Runs HUD imagectl3 + run_eval.py on GitHub-hosted Docker.
+# Trigger: Actions → HUD eval mac_rne_sat → Run workflow
+name: HUD eval mac_rne_sat
+
+on:
+  workflow_dispatch:
+    inputs:
+      group_size:
+        description: "Rollouts (target 10 for 50-80% pass rate)"
+        required: true
+        default: "10"
+      max_steps:
+        description: "Max agent steps per rollout"
+        required: true
+        default: "100"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      HUD_API_KEY: ${{ secrets.HUD_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Require HUD_API_KEY
+        run: |
+          if [ -z "$HUD_API_KEY" ]; then
+            echo "Add repository secret HUD_API_KEY (hud.ai → Phinity Labs → Settings → API Keys)."
+            echo "Optional: also add ANTHROPIC_API_KEY from the liaison email."
+            echo "Repo → Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h
+
+      - name: Checkout this problem repo
+        uses: actions/checkout@v4
+        with:
+          path: problem
+          fetch-depth: 1
+
+      - name: Checkout HUD verilog template
+        uses: actions/checkout@v4
+        with:
+          repository: phinitylabs/verilog-coding-template
+          path: template
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Patch template (fork URL, cache bust, ProblemSpec)
+        run: python3 problem/.github/scripts/patch_verilog_template.py template
+
+      - name: Install template deps
+        working-directory: template
+        run: uv sync
+
+      - name: Build and validate Docker image
+        working-directory: template
+        run: |
+          uv run utils/imagectl3.py verilog_ -b --ids mac_rne_sat
+          uv run utils/imagectl3.py verilog_ -v --ids mac_rne_sat
+          uv run utils/imagectl3.py verilog_ -j --ids mac_rne_sat
+
+      - name: Confirm image has the new spec
+        run: |
+          docker run --rm --entrypoint cat verilog_mac_rne_sat \
+            /home/ubuntu/example-verilog-codebase/docs/spec.md > /tmp/spec.md
+          grep -E "ovf_next|Do not use|rd_d1" /tmp/spec.md
+          if grep -q "Prefer \`always_ff\`" /tmp/spec.md; then
+            echo "Image still has the OLD spec. Cache bust failed."
+            exit 1
+          fi
+
+      - name: Run HUD eval
+        working-directory: template
+        run: |
+          uv run python run_eval.py \
+            --ids mac_rne_sat \
+            --agent claude \
+            --model claude-sonnet-4-5 \
+            --max-steps ${{ inputs.max_steps }} \
+            --group-size ${{ inputs.group_size }} \
+            --max-concurrent 1
