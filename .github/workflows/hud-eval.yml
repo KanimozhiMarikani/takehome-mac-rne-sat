@@ -37,19 +37,19 @@ jobs:
           df -h
 
       - name: Checkout this problem repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: problem
           fetch-depth: 1
 
       - name: Checkout HUD verilog template
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: phinitylabs/verilog-coding-template
           path: template
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Patch template (fork URL, cache bust, ProblemSpec)
         run: python3 problem/.github/scripts/patch_verilog_template.py template
