@@ -13,7 +13,11 @@ Requirements:
   After the rising edge that samples `rd=1`, `res_valid` must already be 1
   (one flip-flop of delay, not two). Implement that as `res_valid <= rd`
   in one always @(posedge clk) block. Do not add snapshot / rd_d / rd_d1
-  registers. Drive stimulus so inputs are stable before that edge.
+  registers. Keep q at least 20 bits signed (28-bit is fine). ovf next
+  state is (clr ? 0 : ovf) | (rd && saturating) — a non-saturating rd+clr
+  still clears ovf. Drive your own TB on the falling edge; do not assign
+  inputs in the same timestep as posedge clk, and do not wait an extra
+  posedge before checking res_valid.
 
 Deliverable: the completed sources/mac_rne_sat.sv. Do not modify any other
 file.
