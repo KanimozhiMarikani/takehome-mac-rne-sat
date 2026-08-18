@@ -58,6 +58,10 @@ saturated snapshot. That *t+1* result **is** the registered sample of cycle
 *t* — do **not** add a second pipeline (for example `rd` → `rd_d` →
 `res_valid`). `res_valid` is exactly one cycle wide per `rd`.
 
+The key rule is: `rd` itself is the trigger for the readout; `res_valid` is
+only the one-cycle-delayed acknowledgment. Do not create a second delayed
+version of `rd` and then use that as the actual readout event.
+
 ```
           t              t+1             t+2
 clk       /‾\___/‾\      /‾\___/‾\       /‾\___/‾\
@@ -71,6 +75,12 @@ res       ...............|  snapshot    | hold...
 from that current `acc`; then, on the same rising edge, apply the
 accumulator update. Do not round from a separately delayed snapshot
 register while also delaying `res_valid`.
+
+Important: the readout logic and the accumulator update are both evaluated on
+that same rising edge. The snapshot is always the old `acc`, regardless of
+whether `en` and/or `clr` are also high in that same cycle. `rd` does not
+change the snapshot value; it only asks for a snapshot, and the update still
+happens afterward for the same cycle.
 
 Same-cycle combinations (snapshot is always the old `acc`):
 
@@ -131,6 +141,8 @@ There is no extra cycle of delay beyond that.
   when that same edge is **not** a saturating readout.
 - A non-saturating readout leaves `ovf` unchanged. `res` always carries
   the clamped value; saturation is signaled only via `ovf`.
+- The `ovf` update happens on the same rising edge as the corresponding
+  `res_valid` update, not one cycle later.
 
 ## 6. Reset
 
