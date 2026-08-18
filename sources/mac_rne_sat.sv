@@ -19,54 +19,35 @@ module mac_rne_sat (
     // 28-bit signed accumulator
     reg signed [27:0] acc;
 
-    // Product
+    // Product and sign-extended accumulate input.
     wire signed [15:0] prod;
     wire signed [27:0] prod_ext;
 
-    assign prod     = a * b;
+    wire signed [27:0] q;
+    wire signed [27:0] q_ext;
+    wire signed [27:0] q_scaled;
+    wire signed [27:0] rem;
+    wire signed [19:0] rounded;
+    wire signed [15:0] out_val;
+    wire saturating;
+
+    assign prod = a * b;
     assign prod_ext = {{12{prod[15]}}, prod};
 
-    // Combinational rounding/saturation of the current accumulator.
-    // Sampled into res/ovf on the rd edge, so the snapshot is the
-    // pre-update (end of t-1) accumulator value.
-    reg signed [15:0] rd_result;
-    reg               rd_saturated;
+    // Readout math uses the snapshot accumulator value, before the same-cycle
+    // update. This makes the readout a pure function of the old acc.
+    assign q = acc >>> 8;
+    assign q_ext = {{8{q[19]}}, q[19:0]};
+    assign q_scaled = q_ext << 8;
+    assign rem = acc - q_scaled;
 
-    reg signed [27:0] q;
-    reg signed [27:0] r;
-    reg signed [27:0] rounded;
+    assign rounded = (rem < 28'sd128) ? q :
+                     ((rem > 28'sd128) ? (q + 28'sd1) :
+                     ((q[0] == 1'b0) ? q : (q + 28'sd1)));
 
-    always @* begin
-        // Arithmetic shift: q = floor(acc / 256)
-        q = acc >>> 8;
-
-        // Remainder is in 0..255, including for negative acc.
-        r = acc - (q <<< 8);
-
-        // Round-to-nearest, ties-to-even.
-        if (r < 28'sd128)
-            rounded = q;
-        else if (r > 28'sd128)
-            rounded = q + 28'sd1;
-        else if (q[0] == 1'b0)
-            rounded = q;
-        else
-            rounded = q + 28'sd1;
-
-        // Saturate only after rounding.
-        if (rounded > 28'sd32767) begin
-            rd_result    = 16'sh7fff;
-            rd_saturated = 1'b1;
-        end
-        else if (rounded < -28'sd32768) begin
-            rd_result    = -16'sd32768;
-            rd_saturated = 1'b1;
-        end
-        else begin
-            rd_result    = rounded[15:0];
-            rd_saturated = 1'b0;
-        end
-    end
+    assign out_val = (rounded > 20'sd32767) ? 16'sd32767 :
+                     ((rounded < -20'sd32768) ? -16'sd32768 : rounded[15:0]);
+    assign saturating = (rounded > 20'sd32767) || (rounded < -20'sd32768);
 
     always @(posedge clk) begin
         if (rst) begin
@@ -76,18 +57,8 @@ module mac_rne_sat (
             ovf       <= 1'b0;
         end
         else begin
-            // Registered readout: rd in cycle t -> res_valid in cycle t+1.
-            res_valid <= rd;
-            if (rd)
-                res <= rd_result;
-
-            // Sticky overflow. Saturating readout wins over same-cycle clr.
-            if (rd && rd_saturated)
-                ovf <= 1'b1;
-            else if (clr)
-                ovf <= 1'b0;
-
-            // Accumulator update (after snapshot). clr+en loads product alone.
+            // Accumulator update. The readout snapshot is always the old acc,
+            // regardless of whether en/clr/rd are also asserted this cycle.
             if (clr) begin
                 if (en)
                     acc <= prod_ext;
@@ -97,6 +68,19 @@ module mac_rne_sat (
             else if (en) begin
                 acc <= acc + prod_ext;
             end
+
+            // One-cycle delayed acknowledgment of rd.
+            res_valid <= rd;
+
+            // Readout only when requested; hold between reads.
+            if (rd)
+                res <= out_val;
+
+            // Sticky overflow: set on saturating readout, clear only on clr.
+            if (rd && saturating)
+                ovf <= 1'b1;
+            else if (clr)
+                ovf <= 1'b0;
         end
     end
 endmodule
