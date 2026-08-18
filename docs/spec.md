@@ -99,7 +99,10 @@ round away from zero. Use floor division, including for negatives.
 Verilog `acc / 256` truncates toward zero and is **wrong** here.
 Equivalent: `q = snapshot >>> 8` (arithmetic shift) and
 `r = snapshot − (q <<< 8)`, so `0 ≤ r ≤ 255` even when `snapshot` is
-negative.
+negative. Keep `q` (and the pre-saturation rounded value) at least
+**20 bits signed**, or simply 28-bit like `acc`. Truncating
+`snapshot >>> 8` to 16 or 19 bits before the saturation compare is
+wrong: large snapshots then wrap and never saturate.
 
 - `q` if `r < 128`;
 - `q + 1` if `r > 128`;
@@ -133,19 +136,26 @@ the only saturating cases. A tie at `q = 32767`, `r = 128` rounds to
 ## 5. Overflow flag
 
 `ovf` is a registered, sticky flag. It updates on the **same rising edge**
-as the corresponding `res_valid` (the edge that registered that readout).
-There is no extra cycle of delay beyond that.
+that samples `rd` (the edge that also does `res_valid <= rd`). There is
+no extra cycle of delay beyond that.
 
-- **Set** when that readout’s rounded snapshot is strictly outside
-  `[−32768, +32767]`.
-- **Cleared** only by `clr` (or `rst`).
-- **Same-cycle priority:** if a saturating `rd` and `clr` are both sampled
-  on that edge, the set wins — `ovf` becomes 1. `clr` clears `ovf` only
-  when that same edge is **not** a saturating readout.
-- A non-saturating readout leaves `ovf` unchanged. `res` always carries
-  the clamped value; saturation is signaled only via `ovf`.
-- The `ovf` update happens on the same rising edge as the corresponding
-  `res_valid` update, not one cycle later.
+Equivalent next-state (then register it):
+
+`ovf_next = (clr ? 0 : ovf) | (rd && saturating)`
+
+| this edge | saturating readout | `clr` | `ovf` next |
+|-----------|--------------------|-------|------------|
+| no `rd`   | —                  | 0     | hold       |
+| no `rd`   | —                  | 1     | 0          |
+| `rd`      | no                 | 0     | hold       |
+| `rd`      | no                 | 1     | **0** (clr still clears) |
+| `rd`      | yes                | 0     | 1          |
+| `rd`      | yes                | 1     | **1** (set beats clr) |
+
+Do **not** write `else if (clr && !rd)`: a non-saturating `rd`+`clr`
+must still clear `ovf`. A non-saturating readout by itself leaves `ovf`
+unchanged. `res` always carries the clamped value; saturation is
+signaled only via `ovf`.
 
 ## 6. Reset
 
@@ -163,3 +173,10 @@ to 0.
 - No SystemVerilog Assertions (SVA).
 - Do not change the module name, port names, directions, or widths.
 - Single clock domain. No latches.
+
+When writing a local testbench: drive DUT inputs on the **falling**
+edge (or after a delay from posedge), never in the same timestep as
+`@(posedge clk)`. After the rising edge that samples `rd=1`,
+`res_valid` is **already** 1; sample outputs on that cycle’s falling
+edge. Waiting a second posedge before checking is one cycle too late
+and will look like a two-flop bug even when the DUT is correct.
