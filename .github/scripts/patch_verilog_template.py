@@ -19,15 +19,11 @@ docs/spec.md.
 
 Requirements:
 - Synthesizable SystemVerilog, compatible with Icarus Verilog (-g2012).
-- Prefer always @(posedge clk) and always @* over always_ff / always_comb.
 - No SystemVerilog Assertions (SVA).
 - Keep the module name, port names, directions, and widths exactly as in
   the provided skeleton.
 - You may write and run your own tests, but grading is performed by a
   hidden testbench that checks cycle-exact behavior against docs/spec.md.
-  After the rising edge that samples `rd=1`, `res_valid` must already be 1
-  (one flip-flop of delay, not two). Drive stimulus so inputs are stable
-  before that edge.
 
 Deliverable: the completed sources/mac_rne_sat.sv. Do not modify any other
 file.

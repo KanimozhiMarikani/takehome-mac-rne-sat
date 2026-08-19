@@ -52,35 +52,19 @@ not be handled.
 
 Asserting `rd` in cycle *t* requests a snapshot readout.
 
-**Latency (one flop, not two).** Sample `rd` on the rising edge of cycle *t*.
-On the **next** cycle (*t+1*) `res_valid` is 1 and `res` holds the rounded,
-saturated snapshot. That *t+1* result **is** the registered sample of cycle
-*t* — do **not** add a second pipeline (for example `rd` → `rd_d` →
-`res_valid`). `res_valid` is exactly one cycle wide per `rd`.
-
-The key rule is: `rd` itself is the trigger for the readout; `res_valid` is
-only the one-cycle-delayed acknowledgment. Do not create a second delayed
-version of `rd` and then use that as the actual readout event.
-
-```
-          t              t+1             t+2
-clk       /‾\___/‾\      /‾\___/‾\       /‾\___/‾\
-rd        ____/‾‾‾‾‾‾‾‾‾‾\______________
-res_valid _______________/‾‾‾‾‾‾‾‾‾‾‾‾‾‾\________
-res       ...............|  snapshot    | hold...
-```
+**Latency.** Sample `rd` on the rising edge of cycle *t*. On the next
+cycle (*t+1*) `res_valid` is 1 and `res` holds the rounded, saturated
+snapshot. `res_valid` is exactly one cycle wide per `rd`.
 
 **Snapshot value.** The snapshot is `acc` as it stood at the end of cycle
 *t−1* — **before** any `en`/`clr` update in cycle *t*. Compute rounding
 from that current `acc`; then, on the same rising edge, apply the
-accumulator update. Do not round from a separately delayed snapshot
-register while also delaying `res_valid`.
+accumulator update.
 
-Important: the readout logic and the accumulator update are both evaluated on
-that same rising edge. The snapshot is always the old `acc`, regardless of
-whether `en` and/or `clr` are also high in that same cycle. `rd` does not
-change the snapshot value; it only asks for a snapshot, and the update still
-happens afterward for the same cycle.
+The snapshot is always the old `acc`, regardless of whether `en` and/or
+`clr` are also high in that same cycle. `rd` does not change the snapshot
+value; it only asks for a snapshot, and the update still happens afterward
+for the same cycle.
 
 Same-cycle combinations (snapshot is always the old `acc`):
 
@@ -92,11 +76,8 @@ Same-cycle combinations (snapshot is always the old `acc`):
 
 **Rounding — round-half-to-even at the 8 LSBs, only at readout.**
 This is **not** round-half-up: a tie (`r == 128`) does **not** always
-round away from zero. Use floor division, including for negatives.
-Verilog `acc / 256` truncates toward zero and is **wrong** here.
-Equivalent: `q = snapshot >>> 8` (arithmetic shift) and
-`r = snapshot − (q <<< 8)`, so `0 ≤ r ≤ 255` even when `snapshot` is
-negative.
+round away from zero. Use floor division by 256, including for negatives,
+to get quotient `q` and remainder `r` with `0 ≤ r ≤ 255`.
 
 - `q` if `r < 128`;
 - `q + 1` if `r > 128`;
@@ -151,9 +132,6 @@ to 0.
 ## 7. Implementation constraints
 
 - Synthesizable SystemVerilog, compatible with Icarus Verilog (`-g2012`).
-- Prefer `always @(posedge clk)` and `always @*` over `always_ff` /
-  `always_comb`. Icarus does not fully support part-selects inside
-  `always_*` processes.
 - No SystemVerilog Assertions (SVA).
 - Do not change the module name, port names, directions, or widths.
 - Single clock domain. No latches.
