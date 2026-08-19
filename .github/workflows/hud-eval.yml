@@ -69,9 +69,9 @@ jobs:
         run: |
           docker run --rm --entrypoint cat verilog_mac_rne_sat \
             /home/ubuntu/example-verilog-codebase/docs/spec.md > /tmp/spec.md
-          grep -E "one flop, not two|round-half-to-even" /tmp/spec.md
-          if grep -q "ovf_next" /tmp/spec.md; then
-            echo "Image still has the over-specified spec (ovf_next). Cache bust failed."
+          grep -E "round-half-to-even|clear-then-accumulate" /tmp/spec.md
+          if grep -q "one flop, not two" /tmp/spec.md; then
+            echo "Image still has the previous spec (one flop, not two). Cache bust failed."
             exit 1
           fi
 
