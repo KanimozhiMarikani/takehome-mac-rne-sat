@@ -65,13 +65,13 @@ jobs:
           uv run utils/imagectl3.py verilog_ -v --ids mac_rne_sat
           uv run utils/imagectl3.py verilog_ -j --ids mac_rne_sat
 
-      - name: Confirm image has the new spec
+      - name: Confirm image has the tightened spec
         run: |
           docker run --rm --entrypoint cat verilog_mac_rne_sat \
             /home/ubuntu/example-verilog-codebase/docs/spec.md > /tmp/spec.md
-          grep -E "ovf_next|Do not use|rd_d1" /tmp/spec.md
-          if grep -q "Prefer \`always_ff\`" /tmp/spec.md; then
-            echo "Image still has the OLD spec. Cache bust failed."
+          grep -E "one flop, not two|round-half-to-even" /tmp/spec.md
+          if grep -q "ovf_next" /tmp/spec.md; then
+            echo "Image still has the over-specified spec (ovf_next). Cache bust failed."
             exit 1
           fi
 
